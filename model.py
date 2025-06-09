@@ -83,19 +83,41 @@ class Decoder(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, model_dim:int=512, num_heads:int=8, max_seq_len:int=5000):
+    def __init__(self, model_dim:int=512, num_heads:int=8, max_seq_len:int=5000, vocabulary_size:int=1):
         super().__init__()
         self.encoder = Encoder(model_dim=model_dim, num_heads=num_heads)
         self.decoder = Decoder(model_dim=model_dim, num_heads=num_heads)
 
+        self.linear = nn.Linear(model_dim, max_seq_len)
+        self.softmax = nn.Softmax(2)
+
         # positional encoding
-        pos = torch.arange(max_seq_len)
+        pos = torch.unsqueeze(torch.arange(max_seq_len), 1)
         dim = torch.arange(model_dim)
 
         denom = 10000 ** (2 * dim / model_dim)
         even = torch.sin(pos / denom)
         odd = torch.cos(pos / denom)
 
+        self.posEncoding = nn.Parameter(torch.zeros((max_seq_len, model_dim)))
+        self.posEncoding[:, 0::2] = even
+        self.posEncoding[:, 1::2] = odd
 
-    def forward(self, num_stacks:int=6):
-        pass
+
+
+
+    def forward(self, input, num_stacks:int=6):
+        # positional encoding
+        x = input + self.posEncoding
+
+        # encoder
+        x = self.encoder.forward(x, num_stacks=num_stacks)
+
+        # decoder
+        x = self.decoder.forward(input, encoder_output=x, num_stacks=num_stacks)
+
+        out = self.softmax.forward(self.linear.forward(x))
+
+        return out
+
+
