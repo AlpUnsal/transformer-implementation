@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import math
 
 class Encoder(nn.Module):
     def __init__(self, model_dim:int=512, num_heads:int=8):
@@ -33,6 +34,7 @@ class Encoder(nn.Module):
         output = self.layernorm(layer + self.ffnn(layer))
 
         return self._stack(output, num_stacks-1)    
+
 
 class Decoder(nn.Module):
     def __init__(self, model_dim:int=512, num_heads:int=8):
@@ -79,3 +81,21 @@ class Decoder(nn.Module):
 
         return self._stack(output, encoder_output, num_stacks-1)
 
+
+class Transformer(nn.Module):
+    def __init__(self, model_dim:int=512, num_heads:int=8, max_seq_len:int=5000):
+        super().__init__()
+        self.encoder = Encoder(model_dim=model_dim, num_heads=num_heads)
+        self.decoder = Decoder(model_dim=model_dim, num_heads=num_heads)
+
+        # positional encoding
+        pos = torch.arange(max_seq_len)
+        dim = torch.arange(model_dim)
+
+        denom = 10000 ** (2 * dim / model_dim)
+        even = torch.sin(pos / denom)
+        odd = torch.cos(pos / denom)
+
+
+    def forward(self, num_stacks:int=6):
+        pass
