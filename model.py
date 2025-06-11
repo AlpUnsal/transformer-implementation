@@ -1,11 +1,10 @@
 import torch
 import torch.nn as nn
-import numpy as np
-import math
 
 class Encoder(nn.Module):
     def __init__(self, model_dim:int=512, num_heads:int=8):
         super().__init__()
+        # sublayers
         self.attention = nn.MultiheadAttention(embed_dim=model_dim, num_heads=num_heads)  ### IMPLEMENT FROM SCRATCH
         self.ffnn = nn.Sequential(
             nn.Linear(model_dim, 2048),
@@ -14,14 +13,30 @@ class Encoder(nn.Module):
         )
         self.layernorm = nn.LayerNorm(normalized_shape=model_dim)
 
+        # query, key, value matrices
         self.queryM = nn.Parameter(torch.randn(model_dim, model_dim)) 
         self.keyM = nn.Parameter(torch.randn(model_dim, model_dim))
         self.valueM = nn.Parameter(torch.randn(model_dim, model_dim))
 
     def forward(self, inputs, num_stacks:int=6):
+        """
+        Forward pass through the encoder
+
+        Args
+            input: (src_len, d) target embeddings
+            num_stacks: number of stacks
+        """
         return self._stack(inputs, num_stacks)
 
     def _stack(self, input, num_stacks:int=6):
+        """
+        Recursive implementation of the stack iteration
+
+        Args
+            input: (src_len, d) target embeddings
+            num_stacks: number of stacks
+        """
+        # base case
         if num_stacks < 1:
             return input
         
@@ -39,6 +54,8 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, model_dim:int=512, num_heads:int=8):
         super().__init__()
+
+        # sublayers
         self.attention = nn.MultiheadAttention(embed_dim=model_dim, num_heads=num_heads)
         self.maskedAttention = nn.MultiheadAttention(embed_dim=model_dim, num_heads=num_heads)
         self.ffnn = nn.Sequential(
@@ -48,6 +65,7 @@ class Decoder(nn.Module):
         )
         self.layernorm = nn.LayerNorm(normalized_shape=model_dim)
 
+        # query, key, value matrices for self-attention and encoder-decoder attention
         self.queryMSelf = nn.Parameter(torch.randn(model_dim, model_dim)) # for self attention layers
         self.keyMSelf = nn.Parameter(torch.randn(model_dim, model_dim))   # ^
         self.valueMSelf = nn.Parameter(torch.randn(model_dim, model_dim)) # ^
@@ -57,9 +75,26 @@ class Decoder(nn.Module):
         self.valueMEnc = nn.Parameter(torch.randn(model_dim, model_dim)) # ^
 
     def forward(self, input, encoder_output, num_stacks:int=6):
+        """
+        Forward pass through the decoder
+
+        Args
+            input: (tgt_len, d) target embeddings
+            encoder_output: output from the encoder to be joined in the attention head
+            num_stacks: number of stacks
+        """
         return self._stack(input, encoder_output, num_stacks)
 
     def _stack(self, input, encoder_output, num_stacks:int=6):
+        """
+        Recursive implementation of the stack iteration
+
+        Args
+            input: (tgt_len, d) target embeddings
+            encoder_output: output from the encoder to be joined in the attention head
+            num_stacks: number of stacks
+        """
+
         if num_stacks < 1:
             return input
         
@@ -71,8 +106,8 @@ class Decoder(nn.Module):
         keyEnc = torch.swapaxes(encoder_output @ self.keyMEnc, 0, 1)
         valueEnc = torch.swapaxes(encoder_output @ self.valueMEnc, 0, 1)
 
-        
-        mask = torch.tril(torch.ones(input.shape[0], input.shape[0]))
+        # mask
+        mask = torch.tril(torch.ones(input.shape[0], input.shape[0], dtype=torch.bool))
 
         layer1 = self.layernorm(input + self.maskedAttention.forward(query=querySelf, key=keySelf, value=valueSelf, attn_mask=mask))
         layer2 = self.layernorm(layer1 + self.attention.forward(query=queryDec, key=keyEnc, value=valueEnc))
@@ -85,48 +120,58 @@ class Decoder(nn.Module):
 class Transformer(nn.Module):
     def __init__(self, model_dim:int=512, num_heads:int=8, max_seq_len:int=5000, vocab_size:int=10000):
         super().__init__()
+
+        # layers
         self.encoder = Encoder(model_dim=model_dim, num_heads=num_heads)
         self.decoder = Decoder(model_dim=model_dim, num_heads=num_heads)
 
-        self.linear = nn.Linear(model_dim, max_seq_len)
-        self.softmax = nn.Softmax(2)
+        self.linear = nn.Linear(model_dim, vocab_size)
+        self.softmax = nn.Softmax(dim=1)
 
         # embedding
         self.embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=model_dim)
 
         # positional encoding
         pos = torch.unsqueeze(torch.arange(max_seq_len), 1)
-        dim = torch.arange(model_dim)
+        dim = torch.unsqueeze(torch.arange(model_dim // 2), 0)
 
         denom = 10000 ** (2 * dim / model_dim)
         even = torch.sin(pos / denom)
         odd = torch.cos(pos / denom)
 
-        self.posEncoding = nn.Parameter(torch.zeros((max_seq_len, model_dim)))
-        self.posEncoding[:, 0::2] = even
-        self.posEncoding[:, 1::2] = odd
+        posEncoding = torch.zeros((max_seq_len, model_dim))
+        posEncoding[:, 0::2] = even
+        posEncoding[:, 1::2] = odd
+
+        self.register_buffer('posEncoding', posEncoding)
 
     def forward(self, source, target, num_stacks:int=6):
+        """
+        Forward pass through the entire architecture
+        
+        Args
+            source: (src_len,)   LongTensor of token ids
+            target: (tgt_len,)   LongTensor of token ids
+        """
         sourceE = self.embedding(source)
         targetE = self.embedding(target)
 
         # positional encoding
-        x = sourceE + self.posEncoding
-        y = targetE + self.posEncoding
+        x = sourceE + self.posEncoding[:len(source)].to(sourceE.device)
+        y = targetE + self.posEncoding[:len(target)].to(targetE.device)
 
         # encoder
-        x = self.encoder.forward(x, num_stacks=num_stacks)
+        x = self.encoder.forward(torch.unsqueeze(x, 1), num_stacks=num_stacks)
 
         # beginning of sentence tensor
-        bos = self.embedding(torch.tensor([[1]]))
+        bos = self.embedding(torch.tensor([1], device=target.device)) # using an abritrary value for BoS token value
 
-        y = torch.cat((bos, targetE[:-1]), dim=0)
+        # moving over one position before putting into decoder
+        y = torch.cat((bos, y[:-1]), dim=0)
+        y = self.decoder.forward(y.unsqueeze(1), encoder_output=x, num_stacks=num_stacks)
 
-        # decoder
-        x = self.decoder.forward(targetE, encoder_output=x, num_stacks=num_stacks)
-
-        out = self.softmax.forward(self.linear.forward(x))
+        # linear + softmax before output
+        out = self.linear(y).squeeze(1)
+        out = self.softmax(out)
 
         return out
-
-
