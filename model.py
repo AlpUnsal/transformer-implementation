@@ -83,13 +83,16 @@ class Decoder(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, model_dim:int=512, num_heads:int=8, max_seq_len:int=5000, vocabulary_size:int=1):
+    def __init__(self, model_dim:int=512, num_heads:int=8, max_seq_len:int=5000, vocab_size:int=10000):
         super().__init__()
         self.encoder = Encoder(model_dim=model_dim, num_heads=num_heads)
         self.decoder = Decoder(model_dim=model_dim, num_heads=num_heads)
 
         self.linear = nn.Linear(model_dim, max_seq_len)
         self.softmax = nn.Softmax(2)
+
+        # embedding
+        self.embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=model_dim)
 
         # positional encoding
         pos = torch.unsqueeze(torch.arange(max_seq_len), 1)
@@ -103,18 +106,24 @@ class Transformer(nn.Module):
         self.posEncoding[:, 0::2] = even
         self.posEncoding[:, 1::2] = odd
 
+    def forward(self, source, target, num_stacks:int=6):
+        sourceE = self.embedding(source)
+        targetE = self.embedding(target)
 
-
-
-    def forward(self, input, num_stacks:int=6):
         # positional encoding
-        x = input + self.posEncoding
+        x = sourceE + self.posEncoding
+        y = targetE + self.posEncoding
 
         # encoder
         x = self.encoder.forward(x, num_stacks=num_stacks)
 
+        # beginning of sentence tensor
+        bos = self.embedding(torch.tensor([[1]]))
+
+        y = torch.cat((bos, targetE[:-1]), dim=0)
+
         # decoder
-        x = self.decoder.forward(input, encoder_output=x, num_stacks=num_stacks)
+        x = self.decoder.forward(targetE, encoder_output=x, num_stacks=num_stacks)
 
         out = self.softmax.forward(self.linear.forward(x))
 
