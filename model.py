@@ -3,6 +3,12 @@ import torch.nn as nn
 
 class Encoder(nn.Module):
     def __init__(self, model_dim:int=512, num_heads:int=8):
+        """
+        Intializes the Encoder
+
+        :param int model_dim: model dimensions
+        :param int num_heads: number of heads for the encoder
+        """
         super().__init__()
         # sublayers
         self.attention = nn.MultiheadAttention(embed_dim=model_dim, num_heads=num_heads)  ### IMPLEMENT FROM SCRATCH
@@ -22,9 +28,8 @@ class Encoder(nn.Module):
         """
         Forward pass through the encoder
 
-        Args
-            input: (src_len, d) target embeddings
-            num_stacks: number of stacks
+        :param np.ndarray input: (src_len, d) target embeddings
+        :param int num_stacks: number of stacks
         """
         return self._stack(inputs, num_stacks)
 
@@ -32,9 +37,8 @@ class Encoder(nn.Module):
         """
         Recursive implementation of the stack iteration
 
-        Args
-            input: (src_len, d) target embeddings
-            num_stacks: number of stacks
+        :param np.ndarray input: (src_len, d) target embeddings
+        :param int num_stacks: number of stacks
         """
         # base case
         if num_stacks < 1:
@@ -53,6 +57,12 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     def __init__(self, model_dim:int=512, num_heads:int=8):
+        """
+        Initializes the Decoder
+
+        :param int model_dim: model dimensions
+        :param int num_heads: number of heads in the decoder
+        """
         super().__init__()
 
         # sublayers
@@ -79,9 +89,9 @@ class Decoder(nn.Module):
         Forward pass through the decoder
 
         Args
-            input: (tgt_len, d) target embeddings
-            encoder_output: output from the encoder to be joined in the attention head
-            num_stacks: number of stacks
+        :param np.ndarray input: (tgt_len, d) target embeddings
+        :param np.ndarray encoder_output: output from the encoder to be joined in the attention head
+        :param int num_stacks: number of stacks
         """
         return self._stack(input, encoder_output, num_stacks)
 
@@ -89,10 +99,9 @@ class Decoder(nn.Module):
         """
         Recursive implementation of the stack iteration
 
-        Args
-            input: (tgt_len, d) target embeddings
-            encoder_output: output from the encoder to be joined in the attention head
-            num_stacks: number of stacks
+        :param np.ndarray input: (tgt_len, d) target embeddings
+        :param np.ndarray encoder_output: output from the encoder to be joined in the attention head
+        :param int num_stacks: number of stacks
         """
 
         if num_stacks < 1:
@@ -119,6 +128,14 @@ class Decoder(nn.Module):
 
 class Transformer(nn.Module):
     def __init__(self, model_dim:int=512, num_heads:int=8, max_seq_len:int=5000, vocab_size:int=10000):
+        """
+        Initializes the Transformer
+
+        :param int model_dim: model dimensions
+        :param int num_heads: number of heads in the encoder/decoder
+        :param int max_seq_len: maximum sequence length
+        :param int vocab_size: vocabulary size in the 
+        """
         super().__init__()
 
         # layers
@@ -149,9 +166,8 @@ class Transformer(nn.Module):
         """
         Forward pass through the entire architecture
         
-        Args
-            source: (src_len,)   LongTensor of token ids
-            target: (tgt_len,)   LongTensor of token ids
+        :param np.ndarray source: (src_len,)   LongTensor of token ids
+        :param np.ndarray target: (tgt_len,)   LongTensor of token ids
         """
         sourceE = self.embedding(source)
         targetE = self.embedding(target)
